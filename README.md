@@ -3,6 +3,8 @@ LightGBM.jl
 
 [![License](http://img.shields.io/badge/license-MIT-brightgreen.svg?style=flat)](LICENSE.md)
 
+This fork provides compatibility with julia 1.1 and minor enhancements.
+
 **LightGBM.jl** provides a high-performance Julia interface for Microsoft's
 [LightGBM](https://github.com/Microsoft/LightGBM). The packages adds several convenience features,
 including automated cross-validation and exhaustive search procedures, and automatically converts

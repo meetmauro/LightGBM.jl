@@ -1,3 +1,5 @@
+using Dates
+
 """
     fit(estimator, X, y[, test...]; [verbosity = 1, is_row_major = false])
 
@@ -21,10 +23,10 @@ array that holds the validation metric's value at each iteration.
 * `weights::Vector{Tw<:Real}`: the training weights.
 * `init_score::Vector{Ti<:Real}`: the init scores.
 """
-function fit{TX<:Real,Ty<:Real,Tw<:Real,Ti<:Real}(estimator::LGBMEstimator, X::Matrix{TX},
+function fit(estimator::LGBMEstimator, X::Matrix{TX},
     y::Vector{Ty}, test::Tuple{Matrix{TX},Vector{Ty}}...; verbosity::Integer = 1,
     is_row_major = false, weights::Vector{Tw} = Vector{Float32}(),
-    init_score::Vector{Ti} = Vector{Float64}())
+    init_score::Vector{Ti} = Vector{Float64}()) where { TX<:Real,Ty<:Real,Tw<:Real,Ti<:Real }
 
     start_time = now()
 
@@ -40,11 +42,11 @@ function fit{TX<:Real,Ty<:Real,Tw<:Real,Ti<:Real}(estimator::LGBMEstimator, X::M
     end
 
     log_debug(verbosity, "Started creating LGBM booster\n")
-    bst_parameters = stringifyparams(estimator, BOOSTERPARAMS) * " verbosity=$verbosity"
+    bst_parameters = stringifyparams(estimator, BOOSTERPARAMS) #* " verbosity=$verbosity"
     estimator.booster = LGBM_BoosterCreate(train_ds, bst_parameters)
 
     n_tests = length(test)
-    tests_names = Array{String}(n_tests)
+    tests_names = Array{String}(undef, n_tests)
     if n_tests > 0
         log_debug(verbosity, "Started creating LGBM test datasets\n")
         @inbounds for (test_idx, test_entry) in enumerate(test)
@@ -74,15 +76,13 @@ function train(estimator::LGBMEstimator, tests_names::Vector{String}, verbosity:
 
     for iter in 1:estimator.num_iterations
         is_finished = LGBM_BoosterUpdateOneIter(estimator.booster)
-        log_debug(verbosity, Base.Dates.CompoundPeriod(now() - start_time),
-                  " elapsed, finished iteration ", iter, "\n")
+        log_debug(verbosity, Dates.CompoundPeriod(now() - start_time), " elapsed, finished iteration ", iter, "\n")
         if is_finished == 0
             is_finished = eval_metrics!(results, estimator, tests_names, iter, n_metrics,
                                         verbosity, bigger_is_better, best_score, best_iter, metrics)
         else
             shrinkresults!(results, iter - 1)
-            log_info(verbosity, "Stopped training because there are no more leaves that meet the ",
-                     "split requirements.")
+            log_info(verbosity, "Stopped training because there are no more leaves that meet the split requirements.")
         end
         is_finished == 1 && return results
     end
@@ -120,8 +120,7 @@ function eval_metrics!(results::Dict{String,Dict{String,Vector{Float64}}},
                     best_iter[metric_idx, test_idx] = iter
                 elseif iter - best_iter[metric_idx, test_idx] >= estimator.early_stopping_round
                     shrinkresults!(results, best_iter[metric_idx, test_idx])
-                    log_info(verbosity, "Early stopping at iteration ", iter,
-                             ", the best iteration round is ", best_iter[metric_idx, test_idx], "\n")
+                    log_info(verbosity, "Early stopping at iteration ", iter, ", the best iteration round is ", best_iter[metric_idx, test_idx], "\n")
                     return 1
                 end
             end
@@ -138,10 +137,10 @@ function store_scores!(results::Dict{String,Dict{String,Vector{Float64}}},
         if !haskey(results, evalname)
             num_evals = cld(estimator.num_iterations, estimator.metric_freq)
             results[evalname] = Dict{String,Vector{Float64}}()
-            results[evalname][metric_name] = Array{Float64}(num_evals)
+            results[evalname][metric_name] = Array{Float64}(undef, num_evals)
         elseif !haskey(results[evalname], metric_name)
             num_evals = cld(estimator.num_iterations, estimator.metric_freq)
-            results[evalname][metric_name] = Array{Float64}(num_evals)
+            results[evalname][metric_name] = Array{Float64}(undef, num_evals)
         end
         eval_idx = cld(iter, estimator.metric_freq)
         results[evalname][metric_name][eval_idx] = scores[metric_idx]
@@ -163,14 +162,14 @@ end
 function stringifyparams(estimator::LGBMEstimator, params::Vector{Symbol})
     paramstring = ""
     n_params = length(params)
-    valid_names = fieldnames(estimator)
+    valid_names = fieldnames(typeof(estimator))
     for (param_idx, param_name) in enumerate(params)
         if in(param_name, valid_names)
             param_value = getfield(estimator, param_name)
             if !isempty(param_value)
                 # Convert parameters that contain indices to C's zero-based indices.
                 if in(param_name, INDEXPARAMS)
-                    param_value -= 1
+                    param_value = param_value .- 1
                 end
 
                 if typeof(param_value) <: Array
